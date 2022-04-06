@@ -1,0 +1,370 @@
+---
+title: "Exploratory Data Analysis - Trends in Opioid Prescriptions"
+author: "Kyle Brewster"
+date: "3/24/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data Cleaning & Setup
+```{r load.csv & packages}
+library(pacman)
+p_load(dplyr, readr, skimr, ggplot2, tidyverse, tidymodels, janitor)
+setwd("C:/Users/Kyle/Desktop/WINTER 22 - UO/Econometrics/aa_opioid_data_analysis")
+
+opioid_list = read.csv("opioids.csv")
+overdose_df = read.csv("overdoses.csv")
+prescriber_df = read.csv("prescriber_info.csv")
+```
+
+## Overview
+```{r skimm the data}
+#skim(prescriber_df)
+```
+
+## Cleaning up
+### The `Credentials` column
+```{r cleaning various diff. names for cred., message=FALSE, warning=FALSE}
+# To get an idea of some of the more-common types of credentials
+top_counts(prescriber_df$Credentials, max_levels = 20)
+
+# Cleaning up the acronyms for some of the most common types of credential
+scribe_MD <- prescriber_df %>% 
+  group_by(Credentials) %>%
+  filter(Credentials == "MD"|
+         Credentials == "M.D."|
+         Credentials == "M.D"|
+         Credentials == "M.D.,"|
+         Credentials == "M,D"|
+         Credentials == "MD."|
+         Credentials == "M.D,"|
+         Credentials == "M.D")
+scribe_DDS <- prescriber_df %>% 
+  filter(Credentials == "DDS"|
+         Credentials == "DDS, MS,"|
+         Credentials == "D.D.S."|
+         Credentials == "DDS, MS"|
+         Credentials == "DDS. MS"|
+         Credentials == "MD, DDS"|
+         Credentials == "DDS,MD"|
+         Credentials == "DMD"| 
+         Credentials == "D.M.D."|
+         Credentials == "D.M.D"|
+         Credentials == "DDS, MD")
+scribe_DO <- prescriber_df %>% 
+  group_by(Credentials) %>%
+  filter(Credentials == "DO"|
+         Credentials == "D.O."|
+         Credentials == "D.O"|
+         Credentials == "DO,"|
+         Credentials == "D.O., M.D"|
+         Credentials == "D.O., M.D."|
+         Credentials == "D,O."|
+         Credentials == "D.O.,")
+scribe_PA <- prescriber_df %>% 
+  group_by(Credentials) %>%
+  filter(Credentials == "PA"|
+         Credentials == "P.A."|
+         Credentials == "P.A.-C"|
+         Credentials == "PA-C"|
+         Credentials == "P.A"|
+         Credentials == "PA-"|
+         Credentials == "PA,"|
+         Credentials == "PA."|
+         Credentials == "P,A."|
+         Credentials == "P.A.C"|
+         Credentials == "P.A.,")  
+scribe_NP <- prescriber_df %>% 
+  group_by(Credentials) %>%
+  filter(Credentials == "NP"|
+         Credentials == "N.P."|
+         Credentials == "N.P"|
+         Credentials == "NP."|
+         Credentials == "NP,"|
+         Credentials == "N.P.,"|
+         Credentials == "N P"|
+         Credentials == "NURSE PRACTITIONER"|
+         Credentials == "NP-C"|
+         Credentials == "NP."|
+         Credentials == "N P")
+    ## Now to make the values more uniform
+scribe_DDS = replace(scribe_DDS, 4,"DDS_DDM")
+scribe_DO  = replace(scribe_DO, 4, "DO")
+scribe_MD  = replace(scribe_MD, 4, "MD")
+scribe_PA  = replace(scribe_PA, 4, "PA")
+scribe_NP  = replace(scribe_NP, 4, "NP")
+```
+
+```{r merging dataframes}
+scribe_joint = rbind(scribe_DDS, scribe_DO,
+                     scribe_MD, scribe_NP,
+                     scribe_PA)
+```
+
+### The `Specialty` column
+Looking at the top specialties
+```{r top counts}
+tab <- as.data.frame(table(prescriber_df$Specialty))
+tab =arrange(tab, desc(Freq)) 
+```
+Filtering the data to only some the more-common values
+```{r top counts filtering}
+scribe_joint = scribe_joint %>%
+  group_by(Specialty) %>%
+  filter(Specialty == "Internal Medicine"|
+         Specialty == "Family Practice"|
+         Specialty == "Dentist"|
+         Specialty == "Physician Assistant"|
+         Specialty == "Nurse Practitioner"|
+         Specialty == "Emergency Medicine"|
+         Specialty == "Psychiatry"|
+         Specialty == "Cardiology"|
+         Specialty == "Obstetrics/Gynecology"|
+         Specialty == "Orthopedic Surgery"|
+         Specialty == "Optometry"|
+         Specialty == "General Surgery")
+```
+
+### The State Naming Convention
+Using the `state.abb` package to save some effort in narrowing this set down to 50 states and excluding territories, miscellaneous, or missing categories
+```{r}
+list_of_states = as.data.frame(cbind(state.abb))
+list_of_states = list_of_states %>%
+  mutate(State = state.abb) # Let's make the state variable have the same naming convention in both; and then filter out providers outside of our scope of interest
+scribe_joint_nonstates = anti_join(scribe_joint, list_of_states, by = 'State')
+
+# And now to get our sets for only the 50 states
+scribe_joint = scribe_joint[
+  !scribe_joint$State %in% scribe_joint_nonstates$State,
+  ]
+```
+
+### Creating Variable for Total Number of Opioids Prescribed
+Since we are working with multiple variables involving opioids, we therefore must avoid the mistake of including an opioid-variable in both the predictor and the outcome variables. Doing so would result in skewness of model accuracy since the predictors and the outcome are directly correlated and would predict an outcome that we already know.
+
+Looking at the `opioid_list` data frame. 
+```{r op. list}
+unique(opioid_list$Generic.Name) # To see which medications are opioids
+top_opioids = rbind(
+  opioid_list[grep("BUPRENORPHINE", opioid_list$Generic.Name),],
+  opioid_list[grep("BUTORPHANOL", opioid_list$Generic.Name),],
+  opioid_list[grep("CODEINE", opioid_list$Generic.Name),],
+  opioid_list[grep("FENTANYL", opioid_list$Generic.Name),],
+  opioid_list[grep("HYDROCODONE", opioid_list$Generic.Name),],
+  opioid_list[grep("HYDROMORPHONE", opioid_list$Generic.Name),],
+  opioid_list[grep("LEVORPHANOL", opioid_list$Generic.Name),],  
+  opioid_list[grep("MEPERIDINE", opioid_list$Generic.Name),],
+  opioid_list[grep("METHADONE", opioid_list$Generic.Name),],
+  opioid_list[grep("MORPHINE", opioid_list$Generic.Name),],
+  opioid_list[grep("NALBUPHINE", opioid_list$Generic.Name),],
+  opioid_list[grep("OPIUM", opioid_list$Generic.Name),],
+  opioid_list[grep("OXYCODONE", opioid_list$Generic.Name),],
+  opioid_list[grep("OXYMORPHONE", opioid_list$Generic.Name),],
+  opioid_list[grep("PENTAZOCINE", opioid_list$Generic.Name),],
+  opioid_list[grep("TRAMADOL", opioid_list$Generic.Name),])
+```
+Here we can see the drug class variables that are opioids from the original `prescriber_df`. Next we can use these different drug types to count the total number of prescriptions written by each provider.
+```{r creating summ_var}
+working_df = scribe_joint %>%
+  select(contains(c("NPI","Gender","State","Credentials","Specialty",
+                  "HYDROCODONE","OXYCONTIN",
+                  "CODEINE","FENTANYL","PENTAZOCINE",
+                  "DIHYDROCODEINE","Opioid.Prescriber",
+                  "OPIUM","BUPRENORPHINE","BUTALBIT","BUTORPHANOL",
+                  "TRAMADOL","MEPERIDINE","HYDROMORPHONE","METHADONE",
+                  "MORPHINE","OXYCODONE","LEVORPHANOL","NALBUPHINE",
+                  "TAPENTADOL","OXYMORPHONE","OPIUM")))
+
+# Now we can calculate the sum of opioid prescription written by each provider for the year
+working_df$summ_var = rowSums(working_df[ ,c(6:18)])
+
+# adding that column to our original data frame
+scribe_joint$summ_var <- working_df$summ_var
+```
+
+### Removing Outliers
+Looking at the `summ_var` variable that we created, we can see that there is one provider in particular that prescribed a significantly higher amount than any other providers. Let's remove that observation from our data.
+```{r removing outlier}
+scribe_joint = subset(scribe_joint, summ_var<4000)
+```
+
+
+### Creating Factor Variables
+
+Thinking back to the overview of the data, 
+```{r}
+scribe_joint = scribe_joint %>%
+  mutate(Gender = as.factor(Gender),
+         State  = as.factor(State),
+         Credentials = as.factor(Credentials),
+         Specialty   = as.factor(Specialty))
+```
+
+## Data Visualization
+```{r code for ggp1-2, eval=FALSE}
+library(ggpubr)
+# Differences when grouped by specialty
+ggp1 = ggplot(
+  scribe_joint,aes(x = Specialty, y = summ_var, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Specialty",
+       y = "Individual Prescriptions Written",
+       fill = "Gender",
+       title = "Opioid Prescription Rates by Specialty & Gender") +
+   scale_x_discrete(labels = c(
+     "Dentist","Emergency Med.","Family Practice",
+     "Internal Medicine","Nurse Practioner","Phys. Assistant"))+
+  theme(plot.title = element_text(hjust = 0.5, face="bold.italic"), 
+        axis.title.x = element_text(size = 12),
+        axis.text.x = element_text(size = 7),
+        axis.title.y = element_text(size = 7),
+        legend.title = element_text(face="bold", size = 10))
+# Differences when grouped by credentials
+ggp2 = ggplot(
+  scribe_joint,aes(x = Credentials, y = summ_var, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Credential",
+       y = "Individual Prescriptions Written",
+       fill = "Gender",
+       title = "Opioid Prescription Rates by Credentials & Gender") +
+   scale_x_discrete(labels = c(
+     "DDM/DDS",
+     "DO","MD",
+     "NP","PA"))+
+  theme(plot.title = element_text(hjust = 0.5, face="bold.italic"), 
+        axis.title.x = element_text(size = 12),
+        axis.text.x = element_text(size = 7),
+        axis.title.y = element_text(size = 7),
+        legend.title = element_text(face="bold", size = 10))
+```
+
+```{r M/F:plot for ggplot_1-2, eval=FALSE}
+ggarrange(ggp1, ggp2, nrow = 2)
+table(scribe_specialty$Gender) # Gender diff. by specialty
+table(scribe_joint$Gender) # gender diff. by cred. 
+```
+
+
+# Training
+Now that the data has been cleaned and we have seen it graphically, we can begin to train a model to fit the data. There are several different ways that this data could be modeled, we will be focusing on a couple of models 
+### Partioining of Data for Training and Testing
+```{r set seed split dfs and rm(NPI)}
+set.seed(1234) # Setting seed for reproducibility
+train_df = scribe_joint %>%
+  sample_frac(0.8)
+test_df  = anti_join(
+  scribe_joint, train_df, by = 'NPI')
+
+# Now lets remove the `NPI` variable to make work easier henceforth
+train_df = train_df %>% select(-c("NPI"))
+test_df = test_df %>% select(-c("NPI"))
+
+```
+
+## *Model 1*: Predicting Opioid Prescrption Rates based on non-opioid prescription rates?
+
+```{r copy df for m1}
+# Let's make a copy of the train/test set that we can play with for this model
+m1_train <- train_df
+m1_test  <- test_df
+```
+
+If we want to answer this question, we should remove the variables of the individual opioids and only include the `summ_var` variable we created for total opioids prescribed. Removing the additional variables would prevent double-counting in the data.
+
+```{r}
+# Using variable from working_df from before to get list of variables to remove from m1_train
+colnames(working_df)
+m1_train = m1_train %>%
+  select(-c("HYDROCODONE.ACETAMINOPHEN",
+            "OXYCONTIN","ACETAMINOPHEN.CODEINE",
+            "FENTANYL","Opioid.Prescriber",
+            "TRAMADOL.HCL","HYDROMORPHONE.HCL",
+            "METHADONE.HCL","MORPHINE.SULFATE",
+            "MORPHINE.SULFATE.ER",
+            "OXYCODONE.ACETAMINOPHEN",
+            "OXYCODONE.HCL"))
+```
+
+```{r fwd/back/step selection w/ summaries}
+p_load(tidyverse, caret, leaps)
+
+set.seed(123)
+# Forward step wise selection
+fwd_step = train(
+  summ_var ~.,
+  data = m1_train,
+  trControl = trainControl(method = "cv", number = 5),
+  method = "leapForward",
+  tuneGrid = expand.grid(nvmax = 1:15)
+)
+fwd_step$results
+fwd_step$bestTune
+
+# Backward step wise selection
+back_step = train(
+  summ_var ~.,
+  data = m1_train,
+  trControl = trainControl(method = "cv", number = 5),
+  method = "leapBackward",
+  tuneGrid = expand.grid(nvmax = 1:15)
+)
+back_step$results
+back_step$bestTune
+```
+
+```{r}
+as.table(coef(fwd_step$finalModel,12))
+```
+```{r}
+as.table(coef(back_step$finalModel,13))
+```
+
+## *Model 2*: Decision Trees
+Are we able to predict the Specialty of a provider based on prescriptions rates and other variables?
+```{r, eval=FALSE}
+p_load(rpart, ranger, parsnip, tidverse)
+m2_train <- train_df
+set.seed(1234)
+default_cv = m2_train %>% vfold_cv(v =5)
+# Define the decision tree
+default_tree = decision_tree(mode ="classification",
+                             cost_complexity = tune(),
+                             tree_depth = tune(),
+                             min_n =10) %>%
+  set_engine("rpart")
+# Defining recipe
+default_recipe = recipe(Specialty ~., data = m2_train)
+# Defining workflow
+default_flow = workflow() %>%
+  add_model(default_tree) %>%
+  add_recipe(default_recipe)
+# Tuning
+default_cv_fit = default_flow %>%
+  tune_grid(
+    default_cv,
+    grid = expand_grid(
+      cost_complexity = seq(0, 0.15, by = 0.01),
+      tree_depth = c(1,2,5,10),
+    ),
+    metrics = metric_set(accuracy, roc_auc)
+  )
+# Fitting the best model
+best_flow = default_flow %>%
+  finalize_workflow(select_best(default_cv_fit, metric = "accuracy")) %>%
+  fit(data = m2_train)
+# Choosing the best model
+best_tree = best_flow %>% extract_fit_parsnip()
+# Plotting the tree
+best_tree$fit %>% rpart.plot()
+```
+
+```{r}
+
+```
+
+
+## *Model 3*:
+## *Model 4*: 
