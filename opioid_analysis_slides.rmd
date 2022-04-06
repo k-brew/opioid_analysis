@@ -11,25 +11,51 @@ output:
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
-## R Markdown
+## The Big Picture
 
-This is an R Markdown presentation. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+## The Data
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document.
+* Source
+    -
+* Challenges
+    - Thousands of spelling inconsistencies 
+    - Sifting through extra/unnecessary data included with download
+    - Difficulty grouping states by type of statewide-opioid policies
+    - Potential for confounding variables outside of data set
+* Shortcomings
+    - No obvious predictor/outcome variables
+    - Only contains data collected in 2014
+    - Large number of observations requires higher computational demand
+    - Lots of interaction among different variables, could skew model if
+      improperly handled
+    
 
-## Slide with Bullets
+## Surprises from the Data
 
-- Bullet 1
-- Bullet 2
-- Bullet 3
+Since the observations in the data were majority male providers, it was not a
+surprise to see that most of the prescriptions written were done so by male
+providers.
+```{r}
 
-## Slide with R Output
-
-```{r cars, echo = TRUE}
-summary(cars)
 ```
 
-## Slide with Plot
+It *was* surprising to see the difference between prescriptions rates once
+controlling for the difference in gender
+```{r}
+
+```
+
+
+## Results & Conclusions
+
+One of the models was able to obtain an `MSE` approximately equal to zero, but
+was because of interdependence of variables selected for model (i.e. the model
+would perform poorly if number of opioids prescribed was withheld from data)
+
+The best performing model was *__Model #__*
+
+Taeawakes?
+- 
 
 ```{r pressure}
 plot(pressure)
