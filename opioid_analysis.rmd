@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # Data Cleaning & Setup
 ```{r load.csv & packages}
 library(pacman)
-p_load(dplyr, readr, skimr, ggplot2, tidyverse, tidymodels, janitor)
+p_load(dplyr, readr, skimr, ggplot2, tidyverse, tidymodels, janitor, magrittr)
 setwd("C:/Users/Kyle/Desktop/WINTER 22 - UO/Econometrics/aa_opioid_data_analysis")
 
 opioid_list = read.csv("opioids.csv")
@@ -247,6 +247,22 @@ table(scribe_specialty$Gender) # Gender diff. by specialty
 table(scribe_joint$Gender) # gender diff. by cred. 
 ```
 
+```{r map of US death rates}
+library(usmap)
+statepop <- statepop %>% filter(abbr!='DC')
+statepop$per_cap_death <- overdose_df$deaths_per_capita
+  
+plot_usmap(data = statepop, values = "per_cap_death", color = "black")+
+  labs(title = "Deaths From Opioid Overdose in US",
+               subtitle = "Population per 100,000")+
+  theme(plot.title = element_text(face="bold", size = 14),
+        plot.subtitle = element_text(face = "italic"),
+        legend.title = element_text(face = "bold", size = 8),
+        legend.position = c(0.9, 0.15))+
+  scale_fill_continuous(
+    low = "white", high = "red", name = "Death Rate (2014)")
+```
+
 
 # Training
 Now that the data has been cleaned and we have seen it graphically, we can begin to train a model to fit the data. There are several different ways that this data could be modeled, we will be focusing on a couple of models 
@@ -254,7 +270,7 @@ Now that the data has been cleaned and we have seen it graphically, we can begin
 ```{r set seed split dfs and rm(NPI)}
 set.seed(1234) # Setting seed for reproducibility
 train_df = scribe_joint %>%
-  sample_frac(0.8)
+  sample_frac(0.8) # Partionining 20% to be used for testing 
 test_df  = anti_join(
   scribe_joint, train_df, by = 'NPI')
 
@@ -264,7 +280,7 @@ test_df = test_df %>% select(-c("NPI"))
 
 ```
 
-## *Model 1*: Predicting Opioid Prescrption Rates based on non-opioid prescription rates?
+## *Model 1*: Linear Regression
 
 ```{r copy df for m1}
 # Let's make a copy of the train/test set that we can play with for this model
@@ -312,15 +328,43 @@ back_step = train(
   tuneGrid = expand.grid(nvmax = 1:15)
 )
 back_step$results
-back_step$bestTune
+back_step$r
 ```
 
-```{r}
-as.table(coef(fwd_step$finalModel,12))
+```{r best coef selections}
+fin_fwd_step_list = as.data.frame(coef(fwd_step$finalModel,12))
+fin_bck_step_list = as.data.frame(coef(back_step$finalModel,13))
+print(fin_bck_step_list)
+print(fin_fwd_step_list)
 ```
+
+
+Now that we have a list of variables, let's think about which to include in our model. The Orthopedic Surgery  specialty is considerably significant in both models, so let's create a dummy variable indicating if a provider is an orthopedic surgeon. `CARISOPRODOL`, 
+`CYCLOBENZAPRINE.HCL`,`METHOCARBAMOL`, `ONDANSETRON.HCL`, `LYRICA`, `TIZANIDINE.HCL`, `LORAZEPAM`,`PREDNISONE`, and `GABAPENTIN`. These are all the different drugs that appeared in both best-selected models.
+
+`DIVALPROEX.SODIUM.ER` was a negative indicator in both models, so we will also include it in our final model. 
 ```{r}
-as.table(coef(back_step$finalModel,13))
+m1_train = m1_train %>%
+  mutate(orth_surg_dummy = as.factor(
+    if_else(Specialty == "Orthopedic Surgery",1,0))
+  )
+
+mod1 = lm(data = m1_train, method = "lm", summ_var~
+           orth_surg_dummy + CARISOPRODOL +
+           CYCLOBENZAPRINE.HCL+METHOCARBAMOL+
+           ONDANSETRON.HCL+LYRICA+TIZANIDINE.HCL+
+            LORAZEPAM+PREDNISONE+GABAPENTIN)
+summary(mod1)
 ```
+
+Looking at some measurements of model accuracy
+```{r}
+m1_train$resid <- resid(mod1)
+m1_train$fitted <- fitted(mod1)
+
+sqrt(mean((m1_train$summ_var - m1_train$fitted)^2)) # to calculate MSE
+```
+Not the best-performing model, but let's see nonetheless how it performs when facing the testing set. Perhaps the insight to learn is that we cannot successfully predict opioid prescription rates from these lists of other prescribed medications
 
 ## *Model 2*: Decision Trees
 Are we able to predict the Specialty of a provider based on prescriptions rates and other variables?
@@ -366,5 +410,44 @@ best_tree$fit %>% rpart.plot()
 ```
 
 
-## *Model 3*:
+## *Model 3*: k-NN
+For this model, lets see if we can find any trends in the state-wide data
+```{r}
+m3_train <- train_df
+m3_test <- test_df
+```
+
+
 ## *Model 4*: 
+```{r}
+m4_train <- train_df
+m4_test <- test_df
+```
+# Testing
+## *Model 1:*
+```{r}
+m1_test = m1_train %>%
+  mutate(m1_test = as.factor(
+    if_else(Specialty == "Orthopedic Surgery",1,0))
+  )
+
+mod1t = lm(data = m1_test, summ_var~
+           orth_surg_dummy + CARISOPRODOL +
+           CYCLOBENZAPRINE.HCL+METHOCARBAMOL+
+           ONDANSETRON.HCL+LYRICA+TIZANIDINE.HCL+
+            LORAZEPAM+PREDNISONE+GABAPENTIN)
+summary(mod1t)
+
+m1_test$resid <- resid(mod1t)
+m1_test$fitted <- fitted(mod1t)
+sqrt(mean((m1_test$summ_var - m1_test$fitted)^2)) # to calculate MSE
+```
+
+## *Model 2:*
+## *Model 3:*
+## *Model 4:*
+
+# Conclusions
+
+Evn though some of our mdoels we're not great at predictnig, it was reassuring
+to see that they are at least consistently inconsistent in their prediction.

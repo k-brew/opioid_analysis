@@ -16,12 +16,14 @@ knitr::opts_chunk$set(echo = FALSE)
 ## The Data
 
 * Source
-    -
+    - [Kaggle](https://www.kaggle.com/datasets/apryor6/us-opiate-prescriptions?select=prescriber-info.csv) data set sourced from [CMS.gov](https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Provider-Charge-Data/Part-D-Prescriber)(Centers for Medicare & Medicaid Services)
 * Challenges
     - Thousands of spelling inconsistencies 
     - Sifting through extra/unnecessary data included with download
     - Difficulty grouping states by type of statewide-opioid policies
     - Potential for confounding variables outside of data set
+    
+## The Data (continued)
 * Shortcomings
     - No obvious predictor/outcome variables
     - Only contains data collected in 2014
