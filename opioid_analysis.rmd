@@ -1,19 +1,19 @@
 ---
 title: "Exploratory Data Analysis - Trends in Opioid Prescriptions"
 author: "Kyle Brewster"
-date: "3/24/2022"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
+# synced with Github
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache=TRUE) ## Cache the results to increase performance.
 ```
 
 # Data Cleaning & Setup
 ```{r load.csv & packages}
 library(pacman)
 p_load(dplyr, readr, skimr, ggplot2, tidyverse, tidymodels, janitor, magrittr)
-setwd("C:/Users/Kyle/Desktop/WINTER 22 - UO/Econometrics/aa_opioid_data_analysis")
 
 opioid_list = read.csv("opioids.csv")
 overdose_df = read.csv("overdoses.csv")
@@ -203,9 +203,31 @@ scribe_joint = scribe_joint %>%
          Specialty   = as.factor(Specialty))
 ```
 
+### Adjustments for Population
+```{r sript_and_death rates by state}
+# Creating a variable for per capita rates
+overdose_df$Deaths <- as.numeric(gsub(",","",overdose_df$Deaths))
+overdose_df$Population <- as.numeric(
+  gsub(",","",overdose_df$Population))
+    # Removing commas first to avoid errors in math
+overdose_df$deaths_per_capita = (
+  overdose_df$Deaths/overdose_df$Population
+  )*100000 # per 100 thousand
+
+df = scribe_joint %>%
+  group_by(State) %>%
+  summarise(state_opioid_volume = sum(summ_var)) %>%
+  arrange(State)
+overdose_df$state_opioid_volume <- df$state_opioid_volume
+    # To give us total opioid prescriptions in each state
+
+# which will allow us to determine the rate-per-thousand people
+overdose_df %<>% mutate(opioids_per_cap =
+                          (state_opioid_volume/Population)*1000)
+```
+
 ## Data Visualization
-```{r code for ggp1-2, eval=FALSE}
-library(ggpubr)
+```{r gg1/2 -- script rates by specialty/cred w/ gender}
 # Differences when grouped by specialty
 ggp1 = ggplot(
   scribe_joint,aes(x = Specialty, y = summ_var, fill = Gender)) +
@@ -214,13 +236,10 @@ ggp1 = ggplot(
        y = "Individual Prescriptions Written",
        fill = "Gender",
        title = "Opioid Prescription Rates by Specialty & Gender") +
-   scale_x_discrete(labels = c(
-     "Dentist","Emergency Med.","Family Practice",
-     "Internal Medicine","Nurse Practioner","Phys. Assistant"))+
   theme(plot.title = element_text(hjust = 0.5, face="bold.italic"), 
         axis.title.x = element_text(size = 12),
-        axis.text.x = element_text(size = 7),
-        axis.title.y = element_text(size = 7),
+        axis.text.x = element_text(size = 7, angle=50,margin = margin(t = 20)),
+        axis.title.y = element_text(size = 12),
         legend.title = element_text(face="bold", size = 10))
 # Differences when grouped by credentials
 ggp2 = ggplot(
@@ -230,29 +249,58 @@ ggp2 = ggplot(
        y = "Individual Prescriptions Written",
        fill = "Gender",
        title = "Opioid Prescription Rates by Credentials & Gender") +
-   scale_x_discrete(labels = c(
-     "DDM/DDS",
-     "DO","MD",
-     "NP","PA"))+
   theme(plot.title = element_text(hjust = 0.5, face="bold.italic"), 
         axis.title.x = element_text(size = 12),
         axis.text.x = element_text(size = 7),
-        axis.title.y = element_text(size = 7),
+        axis.title.y = element_text(size = 12),
         legend.title = element_text(face="bold", size = 10))
+ggp1
+ggp2
 ```
 
-```{r M/F:plot for ggplot_1-2, eval=FALSE}
-ggarrange(ggp1, ggp2, nrow = 2)
-table(scribe_specialty$Gender) # Gender diff. by specialty
-table(scribe_joint$Gender) # gender diff. by cred. 
+```{r ggp3/4 - # of providers by gender}
+ggp3 = scribe_joint %>%
+  group_by(Gender) %>%
+  summarise(plyr::count(Specialty))%>%
+  ggplot(.,aes(x = x, y = freq, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge")+
+  labs(x = "Specialty",
+       y = "Number of Providers",
+       fill = "Gender",
+       title = "Number of Providers by Specialty & Gender") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold.italic"), 
+        axis.title.x = element_text(size = 12),
+        axis.text.x = element_text(size = 7, angle=50,margin = margin(t = 20)),
+        axis.title.y = element_text(size = 12),
+        legend.title = element_text(face="bold", size = 10))
+
+ggp4 = scribe_joint %>%
+  group_by(Gender) %>%
+  summarise(plyr::count(Credentials))%>%
+  ggplot(.,aes(x = x, y = freq, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge")+
+  labs(x = "Credential",
+       y = "Number of Providers",
+       fill = "Gender",
+       title = "Number of Providers by Credentials & Gender") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold.italic"), 
+        axis.title.x = element_text(size = 12),
+        axis.text.x = element_text(size = 7),
+        axis.title.y = element_text(size = 12),
+        legend.title = element_text(face="bold", size = 10))
+
+ggp3
+ggp4
+
 ```
 
-```{r map of US death rates}
+```{r plot map of US death rates}
 library(usmap)
+library(ggpattern)
 statepop <- statepop %>% filter(abbr!='DC')
 statepop$per_cap_death <- overdose_df$deaths_per_capita
   
-plot_usmap(data = statepop, values = "per_cap_death", color = "black")+
+map_of_deaths <- plot_usmap(data = statepop, values = "per_cap_death", color = "black")+
   labs(title = "Deaths From Opioid Overdose in US",
                subtitle = "Population per 100,000")+
   theme(plot.title = element_text(face="bold", size = 14),
@@ -261,16 +309,30 @@ plot_usmap(data = statepop, values = "per_cap_death", color = "black")+
         legend.position = c(0.9, 0.15))+
   scale_fill_continuous(
     low = "white", high = "red", name = "Death Rate (2014)")
+map_of_deaths
 ```
 
+```{r plot overdose rates and script volume}
+plot_overdose_script = ggplot(
+  overdose_df, aes(x=opioids_per_cap, y=deaths_per_capita)) + 
+  geom_point(size=4, alpha=.6, color="black")+
+  geom_smooth(method = 'lm', se=F, color="red")+
+  geom_smooth(method = "loess", se=F, color="blue")+
+  xlim(0,102)+
+  ylab("Overdose Death Rate (per 100,000)")+
+  xlab("Opioid Prescriptions Written (per 1,000 people)")+
+  labs(title = 
+         "State Overdose Death Rate & Number of Opioid Prescrptiions")
+plot_overdose_script
+```
 
-# Training
+# Training & Testing
 Now that the data has been cleaned and we have seen it graphically, we can begin to train a model to fit the data. There are several different ways that this data could be modeled, we will be focusing on a couple of models 
 ### Partioining of Data for Training and Testing
 ```{r set seed split dfs and rm(NPI)}
 set.seed(1234) # Setting seed for reproducibility
 train_df = scribe_joint %>%
-  sample_frac(0.8) # Partionining 20% to be used for testing 
+  sample_frac(0.8) # Partitioning 20% to be used for testing 
 test_df  = anti_join(
   scribe_joint, train_df, by = 'NPI')
 
@@ -280,7 +342,7 @@ test_df = test_df %>% select(-c("NPI"))
 
 ```
 
-## *Model 1*: Linear Regression
+## *Model 1 fin*: Linear Regression
 
 ```{r copy df for m1}
 # Let's make a copy of the train/test set that we can play with for this model
@@ -368,7 +430,7 @@ Not the best-performing model, but let's see nonetheless how it performs when fa
 
 ## *Model 2*: Decision Trees
 Are we able to predict the Specialty of a provider based on prescriptions rates and other variables?
-```{r, eval=FALSE}
+```{r, cache=TRUE}
 p_load(rpart, ranger, parsnip, tidverse)
 m2_train <- train_df
 set.seed(1234)
@@ -380,7 +442,7 @@ default_tree = decision_tree(mode ="classification",
                              min_n =10) %>%
   set_engine("rpart")
 # Defining recipe
-default_recipe = recipe(Specialty ~., data = m2_train)
+default_recipe = recipe(Gender ~., data = m2_train)
 # Defining workflow
 default_flow = workflow() %>%
   add_model(default_tree) %>%
@@ -402,27 +464,80 @@ best_flow = default_flow %>%
 # Choosing the best model
 best_tree = best_flow %>% extract_fit_parsnip()
 # Plotting the tree
-best_tree$fit %>% rpart.plot()
+rpart::best_tree$fit %>% rpart.plot()
 ```
-
-```{r}
-
-```
-
 
 ## *Model 3*: k-NN
-For this model, lets see if we can find any trends in the state-wide data
 ```{r}
-m3_train <- train_df
-m3_test <- test_df
+set.seed(1234)
+m3_full <- scribe_joint
+m3_full = m3_full %>%
+  select(-c("HYDROCODONE.ACETAMINOPHEN",
+            "OXYCONTIN","ACETAMINOPHEN.CODEINE",
+            "FENTANYL","Opioid.Prescriber",
+            "TRAMADOL.HCL","HYDROMORPHONE.HCL",
+            "METHADONE.HCL","MORPHINE.SULFATE",
+            "MORPHINE.SULFATE.ER",
+            "OXYCODONE.ACETAMINOPHEN",
+            "OXYCODONE.HCL"))
+
+m3_train = m3_full %>%
+  sample_frac(0.8) 
+m3_test  = anti_join(
+  m3_full, m3_train, by = 'NPI')
+m3_train %<>% select(-c("NPI"))
+m3_test  %<>% select(-c("NPI"))
+
+m3_train <- fastDummies::dummy_cols(m3_train)
+m3_test <-  fastDummies::dummy_cols(m3_test)
+
+m3_train_subset = m3_train %>% select(-c(1:4))
+m3_train_subset %<>% select(-c("summ_var"))
+# Removing any non-integer variables that are now accounted for with the 
+# dummy variables 
+m3_test_subset = m3_test %>% select(-c(1:4))
+
+m3_test %<>% select(-c(1:4))
+```
+
+```{r eval=FALSE}
+library(class)
+knn.26 <- knn(train=m3_train_subset, test=m3_test, cl=m3_test_subset, k=2)
 ```
 
 
-## *Model 4*: 
+## *Model 4 fin*: Support Vector Machine (SVM)
+
+For this model, let's see if we can accurately predict the gender of a provider.
 ```{r}
 m4_train <- train_df
 m4_test <- test_df
+
+pacman::p_load(e1071)
 ```
+
+Now to prepare the data for making our predictions of interest
+```{r SVM clean and prep}
+# Defining our variables of prediction and outcome
+x = m4_train[,-1]
+y = m4_train[1]
+```
+
+
+Now running the model (takes a while, be patient)
+```{r svm model selection, cache=TRUE}
+svm_model = svm(Gender ~ .,
+                 data = m4_train)
+summary(svm_model)
+
+  
+preds = predict(svm_model,x)
+# Ensure caret package is loaded for line below
+confusionMatrix(preds, y$Gender)
+```
+
+
+
 # Testing
 ## *Model 1:*
 ```{r}
@@ -430,7 +545,7 @@ m1_test = m1_train %>%
   mutate(m1_test = as.factor(
     if_else(Specialty == "Orthopedic Surgery",1,0))
   )
-
+# Using the variables selected with stepwise algorithm
 mod1t = lm(data = m1_test, summ_var~
            orth_surg_dummy + CARISOPRODOL +
            CYCLOBENZAPRINE.HCL+METHOCARBAMOL+
@@ -442,12 +557,56 @@ m1_test$resid <- resid(mod1t)
 m1_test$fitted <- fitted(mod1t)
 sqrt(mean((m1_test$summ_var - m1_test$fitted)^2)) # to calculate MSE
 ```
+Looking at the testing results, while the model may not be very accurate, it is at least consistently inaccurate when looking at the data. Looking at the plot below, we can see a wide range of values of predicted versus actual, but the linear line of approximation 
+
+```{r actual/pred mod1}
+plot(x=m1_test$fitted,
+     m1_test$summ_var,
+     xlab = "Predicted Values",
+     ylab = "Observed Values",
+     main = "Linear Model")
+abline(a = 0,                                        
+       b = 1,
+       col = "red",
+       lwd = 2)
+```
 
 ## *Model 2:*
 ## *Model 3:*
-## *Model 4:*
+## *Model 4 fin*
+Using the same SVM approach as with the testing set.
+```{r svm testing, cache=TRUE}
+xt = m4_train[,-1]
+yt = m4_train[1]
 
+svm_model_test = svm(Gender ~ .,
+                 data = m4_test)
+summary(svm_model_test)
+
+  
+predst = predict(svm_model_test,xt)
+# Ensure caret package is loaded for line below
+confusionMatrix(predst, yt$Gender)
+```
+Again, the results are comparable. 
 # Conclusions
 
 Evn though some of our mdoels we're not great at predictnig, it was reassuring
 to see that they are at least consistently inconsistent in their prediction.
+
+make a table showing all results compared
+
+```{r sandbox, eval=FALSE}
+xts = m4_train[,-256]
+yts = m4_train[256]
+
+svm_model_test_s = svm(summ_var ~ .,
+                 data = m4_test)
+summary(svm_model_test_s)
+
+  
+predst_s = predict(svm_model_test_s,xts)
+# Ensure caret package is loaded for line below
+confusionMatrix(predst_s, yts$summ_var)
+```
+

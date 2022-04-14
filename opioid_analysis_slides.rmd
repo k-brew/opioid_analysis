@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ## The Data
 
 * Source
-    - [Kaggle](https://www.kaggle.com/datasets/apryor6/us-opiate-prescriptions?select=prescriber-info.csv) data set sourced from [CMS.gov](https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Provider-Charge-Data/Part-D-Prescriber)(Centers for Medicare & Medicaid Services)
+    - [Kaggle](https://www.kaggle.com/datasets/apryor6/us-opiate-prescriptions?select=prescriber-info.csv) data set sourced from [CMS.gov](https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Provider-Charge-Data/Part-D-Prescriber) (Centers for Medicare & Medicaid Services)
 * Challenges
     - Thousands of spelling inconsistencies 
     - Sifting through extra/unnecessary data included with download
@@ -31,6 +31,11 @@ knitr::opts_chunk$set(echo = FALSE)
     - Lots of interaction among different variables, could skew model if
       improperly handled
     
+
+## The Data Visualized
+```{r map_of_deaths}
+map_of_deaths
+```
 
 ## Surprises from the Data
 
