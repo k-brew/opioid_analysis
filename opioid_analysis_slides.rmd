@@ -57,7 +57,7 @@ controlling for the difference in gender
 
 One of the models was able to obtain an `MSE` approximately equal to zero, but
 was because of interdependence of variables selected for model (i.e. the model
-would perform poorly if number of opioids prescribed was withheld from data)
+would perform poorly if number of opioids prescribed was withheld from data) 
 
 The best performing model was *__Model #__*
 

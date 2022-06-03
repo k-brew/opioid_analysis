@@ -3,6 +3,7 @@ title: "Exploratory Data Analysis - Trends in Opioid Prescriptions"
 author: "Kyle Brewster"
 output: html_document
 ---
+<body style="background-color:lightgrey;">
 
 ```{r setup, include=FALSE}
 # synced with Github
@@ -11,7 +12,7 @@ knitr::opts_chunk$set(cache=TRUE) ## Cache the results to increase performance.
 ```
 
 # Data Cleaning & Setup
-```{r load.csv & packages}
+```{r loading}
 library(pacman)
 p_load(dplyr, readr, skimr, ggplot2, tidyverse, tidymodels, janitor, magrittr)
 
@@ -21,13 +22,13 @@ prescriber_df = read.csv("prescriber_info.csv")
 ```
 
 ## Overview
-```{r skimm the data}
+```{r skim}
 #skim(prescriber_df)
 ```
 
 ## Cleaning up
 ### The `Credentials` column
-```{r cleaning various diff. names for cred., message=FALSE, warning=FALSE}
+```{r cred_vari., message=FALSE, warning=FALSE}
 # To get an idea of some of the more-common types of credentials
 top_counts(prescriber_df$Credentials, max_levels = 20)
 
@@ -98,7 +99,7 @@ scribe_PA  = replace(scribe_PA, 4, "PA")
 scribe_NP  = replace(scribe_NP, 4, "NP")
 ```
 
-```{r merging dataframes}
+```{r merging}
 scribe_joint = rbind(scribe_DDS, scribe_DO,
                      scribe_MD, scribe_NP,
                      scribe_PA)
@@ -106,12 +107,12 @@ scribe_joint = rbind(scribe_DDS, scribe_DO,
 
 ### The `Specialty` column
 Looking at the top specialties
-```{r top counts}
+```{r top_counts}
 tab <- as.data.frame(table(prescriber_df$Specialty))
 tab =arrange(tab, desc(Freq)) 
 ```
 Filtering the data to only some the more-common values
-```{r top counts filtering}
+```{r top_count}
 scribe_joint = scribe_joint %>%
   group_by(Specialty) %>%
   filter(Specialty == "Internal Medicine"|
@@ -143,10 +144,11 @@ scribe_joint = scribe_joint[
 ```
 
 ### Creating Variable for Total Number of Opioids Prescribed
+
 Since we are working with multiple variables involving opioids, we therefore must avoid the mistake of including an opioid-variable in both the predictor and the outcome variables. Doing so would result in skewness of model accuracy since the predictors and the outcome are directly correlated and would predict an outcome that we already know.
 
 Looking at the `opioid_list` data frame. 
-```{r op. list}
+```{r opiod_list}
 unique(opioid_list$Generic.Name) # To see which medications are opioids
 top_opioids = rbind(
   opioid_list[grep("BUPRENORPHINE", opioid_list$Generic.Name),],
@@ -166,8 +168,10 @@ top_opioids = rbind(
   opioid_list[grep("PENTAZOCINE", opioid_list$Generic.Name),],
   opioid_list[grep("TRAMADOL", opioid_list$Generic.Name),])
 ```
+
 Here we can see the drug class variables that are opioids from the original `prescriber_df`. Next we can use these different drug types to count the total number of prescriptions written by each provider.
-```{r creating summ_var}
+
+```{r summ_var}
 working_df = scribe_joint %>%
   select(contains(c("NPI","Gender","State","Credentials","Specialty",
                   "HYDROCODONE","OXYCONTIN",
@@ -186,8 +190,10 @@ scribe_joint$summ_var <- working_df$summ_var
 ```
 
 ### Removing Outliers
+
 Looking at the `summ_var` variable that we created, we can see that there is one provider in particular that prescribed a significantly higher amount than any other providers. Let's remove that observation from our data.
-```{r removing outlier}
+
+```{r rm_outlier}
 scribe_joint = subset(scribe_joint, summ_var<4000)
 ```
 
@@ -204,7 +210,7 @@ scribe_joint = scribe_joint %>%
 ```
 
 ### Adjustments for Population
-```{r sript_and_death rates by state}
+```{r}
 # Creating a variable for per capita rates
 overdose_df$Deaths <- as.numeric(gsub(",","",overdose_df$Deaths))
 overdose_df$Population <- as.numeric(
@@ -227,7 +233,8 @@ overdose_df %<>% mutate(opioids_per_cap =
 ```
 
 ## Data Visualization
-```{r gg1/2 -- script rates by specialty/cred w/ gender}
+
+```{r plots}
 # Differences when grouped by specialty
 ggp1 = ggplot(
   scribe_joint,aes(x = Specialty, y = summ_var, fill = Gender)) +
@@ -258,7 +265,7 @@ ggp1
 ggp2
 ```
 
-```{r ggp3/4 - # of providers by gender}
+```{r plots2}
 ggp3 = scribe_joint %>%
   group_by(Gender) %>%
   summarise(plyr::count(Specialty))%>%
@@ -294,7 +301,7 @@ ggp4
 
 ```
 
-```{r plot map of US death rates}
+```{r death_rates}
 library(usmap)
 library(ggpattern)
 statepop <- statepop %>% filter(abbr!='DC')
@@ -312,7 +319,7 @@ map_of_deaths <- plot_usmap(data = statepop, values = "per_cap_death", color = "
 map_of_deaths
 ```
 
-```{r plot overdose rates and script volume}
+```{r per_cap}
 plot_overdose_script = ggplot(
   overdose_df, aes(x=opioids_per_cap, y=deaths_per_capita)) + 
   geom_point(size=4, alpha=.6, color="black")+
@@ -327,9 +334,10 @@ plot_overdose_script
 ```
 
 # Training & Testing
+
 Now that the data has been cleaned and we have seen it graphically, we can begin to train a model to fit the data. There are several different ways that this data could be modeled, we will be focusing on a couple of models 
 ### Partioining of Data for Training and Testing
-```{r set seed split dfs and rm(NPI)}
+```{r train_test}
 set.seed(1234) # Setting seed for reproducibility
 train_df = scribe_joint %>%
   sample_frac(0.8) # Partitioning 20% to be used for testing 
@@ -342,9 +350,9 @@ test_df = test_df %>% select(-c("NPI"))
 
 ```
 
-## *Model 1 fin*: Linear Regression
+## *Model 1*: Multivariate Regression
 
-```{r copy df for m1}
+```{r}
 # Let's make a copy of the train/test set that we can play with for this model
 m1_train <- train_df
 m1_test  <- test_df
@@ -366,7 +374,7 @@ m1_train = m1_train %>%
             "OXYCODONE.HCL"))
 ```
 
-```{r fwd/back/step selection w/ summaries}
+```{r stepwise_selection}
 p_load(tidyverse, caret, leaps)
 
 set.seed(123)
@@ -393,19 +401,18 @@ back_step$results
 back_step$r
 ```
 
-```{r best coef selections}
+```{r coef_selection}
 fin_fwd_step_list = as.data.frame(coef(fwd_step$finalModel,12))
 fin_bck_step_list = as.data.frame(coef(back_step$finalModel,13))
 print(fin_bck_step_list)
 print(fin_fwd_step_list)
 ```
 
-
-Now that we have a list of variables, let's think about which to include in our model. The Orthopedic Surgery  specialty is considerably significant in both models, so let's create a dummy variable indicating if a provider is an orthopedic surgeon. `CARISOPRODOL`, 
-`CYCLOBENZAPRINE.HCL`,`METHOCARBAMOL`, `ONDANSETRON.HCL`, `LYRICA`, `TIZANIDINE.HCL`, `LORAZEPAM`,`PREDNISONE`, and `GABAPENTIN`. These are all the different drugs that appeared in both best-selected models.
+Now that we have a list of variables, let's think about which to include in our model. The Orthopedic Surgery  specialty is considerably significant in both models, so let's create a dummy variable indicating if a provider is an orthopedic surgeon. `CARISOPRODOL`, `CYCLOBENZAPRINE.HCL`, `METHOCARBAMOL`, `ONDANSETRON.HCL`, `LYRICA`, `TIZANIDINE.HCL`, `LORAZEPAM`,`PREDNISONE`, and `GABAPENTIN`. These are all the different drugs that appeared in both best-selected models.
 
 `DIVALPROEX.SODIUM.ER` was a negative indicator in both models, so we will also include it in our final model. 
-```{r}
+
+```{r warning=FALSE}
 m1_train = m1_train %>%
   mutate(orth_surg_dummy = as.factor(
     if_else(Specialty == "Orthopedic Surgery",1,0))
@@ -420,26 +427,29 @@ summary(mod1)
 ```
 
 Looking at some measurements of model accuracy
+
 ```{r}
 m1_train$resid <- resid(mod1)
 m1_train$fitted <- fitted(mod1)
 
 sqrt(mean((m1_train$summ_var - m1_train$fitted)^2)) # to calculate MSE
 ```
+
 Not the best-performing model, but let's see nonetheless how it performs when facing the testing set. Perhaps the insight to learn is that we cannot successfully predict opioid prescription rates from these lists of other prescribed medications
 
-## *Model 2*: Decision Trees
+## *Model 2*: Decision Trees  
+
 Are we able to predict the Specialty of a provider based on prescriptions rates and other variables?
-```{r, cache=TRUE}
-p_load(rpart, ranger, parsnip, tidverse)
-m2_train <- train_df
+
+```{r}
+library(rpart.plot)
+m2_train <- train_df %>% na.omit(.)
 set.seed(1234)
 default_cv = m2_train %>% vfold_cv(v =5)
 # Define the decision tree
 default_tree = decision_tree(mode ="classification",
                              cost_complexity = tune(),
-                             tree_depth = tune(),
-                             min_n =10) %>%
+                             tree_depth = tune()) %>%
   set_engine("rpart")
 # Defining recipe
 default_recipe = recipe(Gender ~., data = m2_train)
@@ -464,49 +474,34 @@ best_flow = default_flow %>%
 # Choosing the best model
 best_tree = best_flow %>% extract_fit_parsnip()
 # Plotting the tree
-rpart::best_tree$fit %>% rpart.plot()
+best_tree$fit %>% rpart.plot(roundint = FALSE)
 ```
 
-## *Model 3*: k-NN
+## *Model 3*: Binscatter Random Forest 
 ```{r}
-set.seed(1234)
-m3_full <- scribe_joint
-m3_full = m3_full %>%
-  select(-c("HYDROCODONE.ACETAMINOPHEN",
-            "OXYCONTIN","ACETAMINOPHEN.CODEINE",
-            "FENTANYL","Opioid.Prescriber",
-            "TRAMADOL.HCL","HYDROMORPHONE.HCL",
-            "METHADONE.HCL","MORPHINE.SULFATE",
-            "MORPHINE.SULFATE.ER",
-            "OXYCODONE.ACETAMINOPHEN",
-            "OXYCODONE.HCL"))
+m3_train <- train_df
+m3_test <- test_df
+# Adding indicator vriable for Surgons
+m3_train %<>%
+  mutate(orth_surg_dummy = as.factor(
+    if_else(Specialty == "Orthopedic Surgery",1,0)))
+m3_test %<>%
+  mutate(orth_surg_dummy = as.factor(
+    if_else(Specialty == "Orthopedic Surgery",1,0)))
 
-m3_train = m3_full %>%
-  sample_frac(0.8) 
-m3_test  = anti_join(
-  m3_full, m3_train, by = 'NPI')
-m3_train %<>% select(-c("NPI"))
-m3_test  %<>% select(-c("NPI"))
-
-m3_train <- fastDummies::dummy_cols(m3_train)
-m3_test <-  fastDummies::dummy_cols(m3_test)
-
-m3_train_subset = m3_train %>% select(-c(1:4))
-m3_train_subset %<>% select(-c("summ_var"))
-# Removing any non-integer variables that are now accounted for with the 
-# dummy variables 
-m3_test_subset = m3_test %>% select(-c(1:4))
-
-m3_test %<>% select(-c(1:4))
-```
-
-```{r eval=FALSE}
-library(class)
-knn.26 <- knn(train=m3_train_subset, test=m3_test, cl=m3_test_subset, k=2)
+# Splitting data into bins
+m3_train %<>% mutate(new_bin = ntile(summ_var, n=30)) %>%
+   mutate(new_bin = as.factor(new_bin))
+str(m3_train$new_bin)
+m3_train = m3_train %>%
+   group_by(new_bin) %>%
+   mutate(avg_sum_var = mean(summ_var))
 ```
 
 
-## *Model 4 fin*: Support Vector Machine (SVM)
+The training accuracy for this model is 61.4%.
+
+## *Model 4*: Support Vector Machine (SVM)
 
 For this model, let's see if we can accurately predict the gender of a provider.
 ```{r}
@@ -517,15 +512,14 @@ pacman::p_load(e1071)
 ```
 
 Now to prepare the data for making our predictions of interest
-```{r SVM clean and prep}
+```{r}
 # Defining our variables of prediction and outcome
 x = m4_train[,-1]
 y = m4_train[1]
 ```
 
-
 Now running the model (takes a while, be patient)
-```{r svm model selection, cache=TRUE}
+```{r}
 svm_model = svm(Gender ~ .,
                  data = m4_train)
 summary(svm_model)
@@ -536,13 +530,16 @@ preds = predict(svm_model,x)
 confusionMatrix(preds, y$Gender)
 ```
 
+```{r}
+summary(svm_model)
+```
 
 
 # Testing
-## *Model 1:*
+## *Model 1*: Multivariate Regression
 ```{r}
-m1_test = m1_train %>%
-  mutate(m1_test = as.factor(
+m1_test = m1_test %>%
+  mutate(orth_surg_dummy = as.factor(
     if_else(Specialty == "Orthopedic Surgery",1,0))
   )
 # Using the variables selected with stepwise algorithm
@@ -557,9 +554,10 @@ m1_test$resid <- resid(mod1t)
 m1_test$fitted <- fitted(mod1t)
 sqrt(mean((m1_test$summ_var - m1_test$fitted)^2)) # to calculate MSE
 ```
+
 Looking at the testing results, while the model may not be very accurate, it is at least consistently inaccurate when looking at the data. Looking at the plot below, we can see a wide range of values of predicted versus actual, but the linear line of approximation 
 
-```{r actual/pred mod1}
+```{r pred_vs_actual}
 plot(x=m1_test$fitted,
      m1_test$summ_var,
      xlab = "Predicted Values",
@@ -571,13 +569,62 @@ abline(a = 0,
        lwd = 2)
 ```
 
-## *Model 2:*
-## *Model 3:*
-## *Model 4 fin*
+## *Model 2*: Decision Tree
+
+```{r}
+m2_test <- test_df %>% na.omit(.)
+set.seed(1234)
+default_cv = m2_test %>% vfold_cv(v =5)
+default_recipe = recipe(Gender ~., data = m2_test)
+# Defining workflow
+default_flow = workflow() %>%
+  add_model(default_tree) %>%
+  add_recipe(default_recipe)
+# Tuning
+default_cv_fit = default_flow %>%
+  tune_grid(
+    default_cv,
+    grid = expand_grid(
+      cost_complexity = seq(0, 0.15, by = 0.01),
+      tree_depth = c(1,2,5,10),
+    ),
+    metrics = metric_set(accuracy, roc_auc)
+  )
+# Fitting the best model
+best_flow = default_flow %>%
+  finalize_workflow(select_best(default_cv_fit, metric = "accuracy")) %>%
+  fit(data = m2_test)
+# Choosing the best model
+best_tree = best_flow %>% extract_fit_parsnip()
+# Plotting the tree
+best_tree$fit %>% rpart.plot(roundint = FALSE)
+```
+
+## *Model 3*: Random Forest
+
+```{r}
+m3_test %<>% mutate(new_bin = ntile(summ_var, n=30)) %>%
+   mutate(new_bin = as.factor(new_bin)) %>%
+   group_by(new_bin) %>%
+   mutate(avg_sum_var = mean(summ_var))
+
+rf_mod = randomForest::randomForest(formula = new_bin ~.,
+                                    data = m3_train,
+                                    ntree = 50)
+m3_test$pred_rf = predict(rf_mod, newdata = m3_test, type = "response")
+
+# to obtain the number of times the predicted values were the actual values
+length(which(m3_test$pred_rf==m3_test$new_bin)) -> accurate #1758
+# divided by total observations to obtain accuracy
+accurate / (nrow(m3_test))
+```
+
+## *Model 4*: Support Vector Machine
+
 Using the same SVM approach as with the testing set.
-```{r svm testing, cache=TRUE}
-xt = m4_train[,-1]
-yt = m4_train[1]
+```{r svm_testing}
+xt = m4_test[,-1]
+yt = m4_test[1]
 
 svm_model_test = svm(Gender ~ .,
                  data = m4_test)
@@ -588,25 +635,95 @@ predst = predict(svm_model_test,xt)
 # Ensure caret package is loaded for line below
 confusionMatrix(predst, yt$Gender)
 ```
+
 Again, the results are comparable. 
+
 # Conclusions
 
-Evn though some of our mdoels we're not great at predictnig, it was reassuring
-to see that they are at least consistently inconsistent in their prediction.
+The linear model predicting the `summ_var` variable did a decent job at fitting the general trend in the data, but had a Mean Squared Error (MSE) which might suggest some concern. But considering the range of the values was around 3000, that is a pretty small margin in the context. It was also reassuring to see that the same general trend existed in both the training and the testing sets 
 
-make a table showing all results compared
-
-```{r sandbox, eval=FALSE}
-xts = m4_train[,-256]
-yts = m4_train[256]
-
-svm_model_test_s = svm(summ_var ~ .,
-                 data = m4_test)
-summary(svm_model_test_s)
-
-  
-predst_s = predict(svm_model_test_s,xts)
-# Ensure caret package is loaded for line below
-confusionMatrix(predst_s, yts$summ_var)
+```{r}
+plot(x=m1_test$fitted,
+     m1_test$summ_var,
+     xlab = "Predicted Values",
+     ylab = "Observed Values",
+     main = "Linear Model")
+abline(a = 0,                                        
+       b = 1,
+       col = "red",
+       lwd = 2)
 ```
 
+We can go one step further and create a binned scatter plot of the actual versus predicted values and see that the linear fit becomes stronger
+```{r}
+p1= ggplot(m1_test, aes(x=fitted,y=summ_var)) +
+  geom_point(size=2, alpha = 0.1, color="red") +
+  stat_summary_bin(fun.y='mean', bins=75, 
+                   color='blue', size=1.5, geom='point')+
+   geom_smooth(method = "lm", color="blue",se=F)+
+   theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank())
+
+p2 = ggplot(m1_test, aes(x=fitted,y=summ_var)) +
+  geom_point(size=2, alpha = 0.1, color="red") +
+  stat_summary_bin(fun.y='mean', bins=15, 
+                   color='blue', size=1.5, geom='point')+
+   geom_smooth(method = "lm", color="blue",se=F)+
+   theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank())
+
+ggpubr::ggarrange(p1,p2)
+```
+
+Especially if we change the number of bins used
+
+```{r}
+p3= ggplot(m1_test, aes(x=fitted,y=summ_var)) +
+  geom_point(size=2, alpha = 0.1, color="red") +
+  stat_summary_bin(fun.y='mean', bins=75, 
+                   color='blue', size=1.5, geom='point')+
+   geom_smooth(method = "lm", color="blue",se=F)+
+   theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank())+
+      xlim(0,2000)+ylim(0,2000)
+
+p4= ggplot(m1_test, aes(x=fitted,y=summ_var)) +
+  geom_point(size=2, alpha = 0.1, color="red") +
+  stat_summary_bin(fun.y='mean', bins=15, 
+                   color='blue', size=1.5, geom='point')+
+   geom_smooth(method = "lm", color="blue",se=F)+
+   theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank())+
+   xlim(0,2000)+ylim(0,2000)
+
+ggpubr::ggarrange(p3,p4)
+
+```
+
+
+The Random forest model we used has an accuracy of 61.4%. Compared to the The SVM model had an accuracy of 77.37% (and with a 95% confidence interval of (0.7579, 0.7889)).The decision tree model had an accuracy of 73.94% as calculated from the confusion matrix below:
+
+```{r}
+m2_test$tree_mod = predict(best_tree, new_data =  m2_test)
+temp_df = m2_test %>% rename(tree_mod = 257) %>%
+   mutate(tree_pred = if_else(tree_mod =="M", "MALE","FEMALE" ))
+table(Actual = temp_df$Gender,
+      Predicted = temp_df$tree_pred)
+(522+1595)/(522+1595+500+246)
+```
+
+Accuracy was not a metric that was worth out consideration when predicting continuous variables. Due to the natural smoothing that result from modeling, it is not very likely that the model will get many (if any) predictions that correct down to the integer.
+ 
+There are also other measurements of accuracy in the models above that we care about and are important to consider when building or assessing a model. Looking at a plot of the residuals for the regression model, we can see a strong clustering around 0, but there is still noise uncaptured by the model.
+
+```{r}
+plot(m1_test$resid)
+```
+
+If we look at the listed variables of importance for the decision tree model, we which different variables were valued more in each model. Knowledge of the construction of these models is important when attempting to use to predict new data where changes in policy or other changes have altered trends in healthcare and opioid prescriptions (like prescription druge monitoring programs).
+
+```{r}
+best_tree$fit$variable.importance
+```
+
+When it came to the classification prediction of the `gender` variable, the SVM outperformed the decision tree. It would be interested to see how these models would perform when facing more-recent data since the methods that we used to contrast the model should adjust for potential differences in volume by using proportions as a whole
